@@ -22,8 +22,8 @@
 
 #define OLED_RESET 13 // Reset pin # (or -1 if sharing Arduino reset pin)
 
-#define wifi_ssid "Tell my Wi-fi love her"   //You have seen this before
-#define wifi_password "thirstybanana810" //
+#define wifi_ssid "University of Washington"   //You have seen this before
+#define wifi_password "" //
 
 #define DHTPIN 12     // Digital pin connected to the DHT sensor
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
@@ -64,6 +64,8 @@ PubSubClient mqtt(espClient);     //blah blah blah, tie PubSub (mqtt) client to 
 //////////
 
 char mac[6]; //A MAC address is a 'truly' unique ID for each device, lets use that as our 'truly' unique user ID!!!
+
+char message[201]; //201, as last character in the array is the NULL character, denoting the end of the array
 
 //////////
 //In our loop(), we are going to create a c-string that will be our message to the MQTT server, we will
