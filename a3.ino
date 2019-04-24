@@ -1,20 +1,4 @@
-//HEAVY commenting is on . . .
-//In this program we are publishing and subscribing to a MQTT server that requires a login/password
-//authentication scheme. We are connecting with a unique client ID, which is required by the server.
-//This unique client ID is derived from our device's MAC address, which is unique to the device, and
-//thus unique to the universe.
-//
-//We are publishing with a generic topic ("theTopic") which you should change to ensure you are publishing
-//to a known topic (eg, if everyone uses "theTopic" then everyone would be publishing over everyone else, which
-//would be a mess). So, create your own topic channel.
-//
-//We have hardcoded the topic and the subtopics in the mqtt.publish() function, because those topics and sub
-//topics are never going to change. We have subscribed to the super topic using the directory-like addressing
-//system MQTT provides. We subscribe to 'theTopic/+' which means we are subscribing to 'theTopic' and every
-//sub-topic that might come after the main topic. We denote this with a '+' symbol.
-//
-//Please change your super topic and don't use 'theTopic'.
-/////
+///// Alex Banh, HCDE 440 sp19 assignment 3
 
 #include <ESP8266WiFi.h>    //Requisite Libraries . . .
 #include "Wire.h"           //
@@ -26,14 +10,25 @@
 //MPL115A2 required libraries
 #include <Wire.h>
 #include <Adafruit_MPL115A2.h>
+//OLED SSD1306 128x32 i2c required libraries
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
 
-#define wifi_ssid "University of Washington"   //You have seen this before
-#define wifi_password "" //
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+
+#define OLED_RESET 13 // Reset pin # (or -1 if sharing Arduino reset pin)
+
+#define wifi_ssid "Tell my Wi-fi love her"   //You have seen this before
+#define wifi_password "thirstybanana810" //
 
 #define DHTPIN 12     // Digital pin connected to the DHT sensor
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
+// Defines the digital pin that our button is connected to.
 #define BUTTON_PIN 2
 
 // Initialize DHT sensor
@@ -42,11 +37,11 @@ DHT dht(DHTPIN, DHTTYPE);
 // Initialize MPL115A2 sensor
 Adafruit_MPL115A2 mpl115a2;
 
+// Initialize the OLED display
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 //////////
-//So to clarify, we are connecting to and MQTT server
-//that has a login and password authentication
-//I hope you remember the user and password
+// MQTT server address and credentials
 //////////
 
 #define mqtt_server "mediatedspaces.net"  //this is its address, unique to the server
@@ -74,23 +69,36 @@ char mac[6]; //A MAC address is a 'truly' unique ID for each device, lets use th
 //In our loop(), we are going to create a c-string that will be our message to the MQTT server, we will
 //be generous and give ourselves 200 characters in our array, if we need more, just change this number
 //////////
+unsigned long currentMillis, previousMillis; //we are using these to track the interval for our weather data packages
 
-char message[201]; //201, as last character in the array is the NULL character, denoting the end of the array
-
-unsigned long currentMillis, previousMillis; //we are using these to hold the values of our timers
-
-bool current = false; // Variable to store the status of the current
-String currentValue = "not pressed";
+bool current = false; // Variable to store the status of the current from the button
+String currentValue = "not pressed"; // String representing the current state of the button
 
 /////SETUP/////
 void setup() {
   Serial.begin(115200);
+  // Setup our wifi and connect to the MQTT server
   setup_wifi();
   mqtt.setServer(mqtt_server, 1883);
+  // Start up our sensors
   dht.begin();
   mpl115a2.begin();
   // set button pin as an input
   pinMode(BUTTON_PIN, INPUT);
+
+  // SSD1306_SWITCHCAPVCC = generate display voltage from 3.3V internally
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+  // Show initial display buffer contents on the screen --
+  // the library initializes this with an Adafruit splash screen.
+  display.display();
+  delay(2000); // Pause for 2 seconds
+
+  // Clear the buffer
+  display.clearDisplay();
 }
 
 /////SETUP_WIFI/////
@@ -130,46 +138,30 @@ void reconnect() {
 
 /////LOOP/////
 void loop() {
+  // Initialize our interval timer for sending weather data
   unsigned long currentMillis = millis();
-  
+
   if (!mqtt.connected()) {
     reconnect();
   }
 
   mqtt.loop(); //this keeps the mqtt connection 'active'
 
-  /////
-  //This demo uses sprintf, which is very similar to printf,
-  //read more here: https://en.wikipedia.org/wiki/Printf_format_string
-  /////
-
-//  //Here we just send a regular c-string which is not formatted JSON, or json-ified.
-//  if (millis() - timerOne > 10000) {
-//    //Here we would read a sensor, perhaps, storing the value in a temporary variable
-//    //For this example, I will make something up . . .
-//    int legoBatmanIronyLevel = 2;
-//    sprintf(message, "{\"TEST\":\"Hello\"}"); // %d is used for an int
-//    mqtt.publish("weather/us", message);
-//    timerOne = millis();
-//  }
-
   //Here we will deal with a JSON string
 
-      
+
   // grab the current state of the button.
   // we have to flip the logic because we are
   // using a pullup resistor.
   if(digitalRead(BUTTON_PIN) == LOW) {
     current = true;
     currentValue = "pressed!";
-    Serial.println("Button pressed!");
   } else {
     current = false;
     currentValue = "not pressed!";
-    Serial.println("Button not pressed!");
   }
 
- if (currentMillis - previousMillis > 5000) { //a periodic report, every 5 seconds
+  if (currentMillis - previousMillis > 5000) { //a periodic report, every 5 seconds
 
     // Reading temperature or humidity takes about 250 milliseconds!
       // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -179,21 +171,19 @@ void loop() {
       // Read temperature as Fahrenheit (isFahrenheit = true)
       float f = dht.readTemperature(true);
 
-//      Serial.println(h);
-//      Serial.println(f);
 
-        // Check if any reads failed and exit early (to try again).
+  // Check if any reads failed and exit early (to try again).
   if (isnan(h) || isnan(t) || isnan(f)) {
     Serial.println(F("Failed to read from DHT sensor!"));
   }
 
   // Variables initalized to store the current pressure and temperature
-  float pressureKPA = 0, temperatureC = 0;    
+  float pressureKPA = 0, temperatureC = 0;
 
   // Gets and sets both the pressure and temperature variables with data from the MPL115A2 sensor
   mpl115a2.getPT(&pressureKPA,&temperatureC);
 
-  
+
     /////
     //Unfortunately, as of this writing, sprintf (under Arduino) does not like floats  (bug!), so we can not
     //use floats in the sprintf function. Further, we need to send the temp and humidity as
@@ -207,8 +197,8 @@ void loop() {
 
     char str_temp[6]; //a temp array of size 6 to hold "XX.XX" + the terminating character
     char str_humd[6]; //a temp array of size 6 to hold "XX.XX" + the terminating character
-    char str_pres[7];
-    char curr_val[15];
+    char str_pres[7]; //a temp array of size 7 to hold "XXX.XX" + the terminating character
+    char curr_val[15]; //a temp array of size 15 to hold our button message
 
     //take temp, format it into 5 char array with a decimal precision of 2, and store it in str_temp
     dtostrf(f, 5, 2, str_temp);
@@ -216,6 +206,7 @@ void loop() {
     dtostrf(h, 5, 2, str_humd);
     //ditto2
     dtostrf(pressureKPA, 6, 2, str_pres);
+    // Take our button message as a string and convert it into a character array
     currentValue.toCharArray(curr_val, 15);
 
     /////
@@ -224,10 +215,38 @@ void loop() {
     /////
 
     sprintf(message, "{\"temp\":\"%s\", \"humd\":\"%s\", \"pres\":\"%s\", \"btn\":\"%s\"}", str_temp, str_humd, str_pres, curr_val);
-    //Serial.printf("{\"temp\":\"%s\", \"humd\":\"%s\", \"pres\":\"%s\"}", str_temp, str_humd, str_pres);
+    // Publish our weather data to the AlexBanh/a3 topic on our MQTT server
     mqtt.publish("AlexBanh/a3", message);
+
+    // Calls a method to display the weather data on our LED screen
+    displayWeather((String)f, (String)h, (String)pressureKPA);
 
      previousMillis = currentMillis;
  }
 
+
 }//end Loop
+
+
+ // displayWeather displays the current temperature, pressure, and humidity data on our screen.
+void displayWeather(String temperature, String humidity, String pressure) {
+
+  // Clears the current display
+  display.clearDisplay();
+
+  // Sets some display options
+  display.setTextSize(1);      // Normal 1:1 pixel scale
+  display.setTextColor(WHITE); // Draw white text
+  display.setCursor(0, 0);     // Start at top-left corner
+  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+  // Prints the current weather data to the OLED screen
+  display.print("Current weather:\n");
+  display.print("Temperature: " + temperature + " F\n");
+  display.print("Humidity: " + humidity + " g/kg\n");
+  display.print("Pressure: " + pressure + " kPa");
+
+
+  // Tells the display to display what is buffered
+  display.display();
+}
